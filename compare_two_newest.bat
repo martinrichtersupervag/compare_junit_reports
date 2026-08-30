@@ -1,0 +1,1 @@
+python compare_junit_reports.py --show-difference
