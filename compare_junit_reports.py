@@ -237,6 +237,84 @@ def print_differences(report: dict[str, Any]) -> None:
         print(f"+ {second_label}: {status['second']}")
 
 
+def _repeated_change_tests(reports: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for report in reports:
+        for item in report["changed"]:
+            if "status" not in item["differences"]:
+                continue
+            counts[item["test"]] = counts.get(item["test"], 0) + 1
+    return {test: count for test, count in sorted(counts.items()) if count > 1}
+
+
+def render_compare_all(
+    pairs: list[tuple[Path, Path]],
+    reports: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> int:
+    first = pairs[0][0]
+    last = pairs[-1][1]
+    if args.as_json:
+        mode = "json"
+        payload = {
+            "comparison_count": len(reports),
+            "repeat_test_locations": _repeated_change_tests(reports),
+            "comparisons": reports,
+        }
+        text = json.dumps(payload, indent=2)
+    elif args.simple:
+        mode = "simple"
+        output = io.StringIO()
+        with redirect_stdout(output):
+            print("Current comparison shows:")
+            repeated = _repeated_change_tests(reports)
+            print(f"- repeated testcase changes on the same location: {len(repeated)}")
+            if repeated:
+                for test, count in repeated.items():
+                    print(f"  - {test}: {count} comparisons")
+            for report in reports:
+                print_simple_report(report)
+        text = output.getvalue()
+    elif args.show_differences:
+        mode = "show-differences"
+        output = io.StringIO()
+        with redirect_stdout(output):
+            repeated = _repeated_change_tests(reports)
+            if repeated:
+                print(f"Repeated testcase changes on the same location: {len(repeated)}")
+                for test, count in repeated.items():
+                    print(f"  {test}: {count} comparisons")
+                print()
+            for report in reports:
+                print_differences(report)
+                print()
+        text = output.getvalue()
+    else:
+        mode = "report"
+        output = io.StringIO()
+        with redirect_stdout(output):
+            repeated = _repeated_change_tests(reports)
+            if repeated:
+                print(f"Repeated testcase changes on the same location: {len(repeated)}")
+                for test, count in repeated.items():
+                    print(f"  {test}: {count} comparisons")
+                print()
+            for report in reports:
+                print_report(report, args.include_times)
+                print()
+        text = output.getvalue()
+
+    print(text, end="")
+    output_path = output_filename(first, last, mode)
+    try:
+        output_path.write_text(text, encoding="utf-8")
+    except OSError as error:
+        print(f"Error writing output file {output_path}: {error}", file=sys.stderr)
+        return 1
+    print(f"Output written to: {output_path.name}")
+    return 0
+
+
 def output_filename(first: Path, second: Path, mode: str) -> Path:
     return first.parent / f"{mode}_{_report_label(str(first))}_{_report_label(str(second))}.txt"
 
@@ -296,14 +374,23 @@ def main() -> int:
             files = choose_all_files(args.directory or Path(__file__).parent)
             if len(files) < 2:
                 raise ValueError(f"Need at least two junit_*.xml files in {args.directory or Path(__file__).parent}")
-            pairs = zip(files, files[1:])
+            pairs = list(zip(files, files[1:]))
+            reports = [
+                compare(first, second, args.include_times, args.include_details)
+                for first, second in pairs
+            ]
+            if render_compare_all(pairs, reports, args):
+                return 1
         elif args.first or args.second:
             if not (args.first and args.second):
                 parser.error("provide both first and second XML reports")
             pairs = [(args.first, args.second)]
+            for first, second in pairs:
+                report = compare(first, second, args.include_times, args.include_details)
+                if render_and_save(report, first, second, args):
+                    return 1
         else:
-            pairs = [choose_files(args.directory or Path(__file__).parent)]
-        for first, second in pairs:
+            first, second = choose_files(args.directory or Path(__file__).parent)
             report = compare(first, second, args.include_times, args.include_details)
             if render_and_save(report, first, second, args):
                 return 1
