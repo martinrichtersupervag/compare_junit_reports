@@ -230,9 +230,11 @@ def print_differences(report: dict[str, Any]) -> None:
         status = item["differences"].get("status")
         if status is None:
             continue
+        first_label = _report_label(report["first"]["file"])
+        second_label = _report_label(report["second"]["file"])
         print(f"CHANGED: {item['test']}")
-        print(f"- first: {status['first']}")
-        print(f"+ second: {status['second']}")
+        print(f"- {first_label}: {status['first']}")
+        print(f"+ {second_label}: {status['second']}")
 
 
 def output_filename(first: Path, second: Path, mode: str) -> Path:
@@ -276,7 +278,13 @@ def main() -> int:
     parser.add_argument("--include-times", action="store_true", help="Report testcase runtime changes")
     parser.add_argument("--include-details", action="store_true", help="Compare verbose failure/error details")
     parser.add_argument("--simple", action="store_true", help="Print a concise comparison summary")
-    parser.add_argument("--show-differences", action="store_true", help="Show changed testcase outcomes as two-sided differences")
+    parser.add_argument(
+        "--show-differences",
+        "--show-difference",
+        action="store_true",
+        dest="show_differences",
+        help="Show changed testcase outcomes as two-sided differences",
+    )
     parser.add_argument("--compare-all", action="store_true", help="Compare every report with the next chronological report")
     parser.add_argument("--json", action="store_true", dest="as_json", help="Write the comparison as JSON")
     args = parser.parse_args()
