@@ -247,18 +247,56 @@ def _repeated_change_tests(reports: list[dict[str, Any]]) -> dict[str, int]:
     return {test: count for test, count in sorted(counts.items()) if count > 1}
 
 
+def summarize_test_statuses(files: list[Path]) -> list[tuple[str, dict[str, int]]]:
+    totals: dict[str, dict[str, int]] = {}
+    for path in files:
+        _, results = load_results(path)
+        for result in results.values():
+            label = _test_label(result)
+            bucket = totals.setdefault(label, {"passed": 0, "failure": 0, "error": 0, "skipped": 0})
+            bucket[result.status] = bucket.get(result.status, 0) + 1
+    return [
+        (label, counts)
+        for label, counts in sorted(
+            totals.items(),
+            key=lambda item: (
+                -(item[1].get("failure", 0) + item[1].get("error", 0)),
+                item[0],
+            ),
+        )
+        if counts.get("failure", 0) or counts.get("error", 0)
+    ]
+
+
+def print_failure_frequency_summary(files: list[Path]) -> None:
+    summary = summarize_test_statuses(files)
+    if not summary:
+        print("Failure frequency across all XML reports: none")
+        return
+    print("Failure frequency across all XML reports:")
+    for label, counts in summary:
+        total_failures = counts.get("failure", 0) + counts.get("error", 0)
+        print(
+            f"  {label}: passed={counts.get('passed', 0)}, failed={counts.get('failure', 0)}, "
+            f"errors={counts.get('error', 0)}, skipped={counts.get('skipped', 0)}, total_failures={total_failures}"
+        )
+
+
 def render_compare_all(
     pairs: list[tuple[Path, Path]],
     reports: list[dict[str, Any]],
     args: argparse.Namespace,
+    files: list[Path] | None = None,
 ) -> int:
     first = pairs[0][0]
     last = pairs[-1][1]
+    status_summary = summarize_test_statuses(files or []) if files is not None else []
     if args.as_json:
         mode = "json"
         payload = {
             "comparison_count": len(reports),
             "repeat_test_locations": _repeated_change_tests(reports),
+            "status_counts_across_reports": {label: counts for label, counts in status_summary},
             "comparisons": reports,
         }
         text = json.dumps(payload, indent=2)
@@ -267,6 +305,8 @@ def render_compare_all(
         output = io.StringIO()
         with redirect_stdout(output):
             print("Current comparison shows:")
+            if status_summary:
+                print_failure_frequency_summary(files or [])
             repeated = _repeated_change_tests(reports)
             print(f"- repeated testcase changes on the same location: {len(repeated)}")
             if repeated:
@@ -279,6 +319,9 @@ def render_compare_all(
         mode = "show-differences"
         output = io.StringIO()
         with redirect_stdout(output):
+            if files:
+                print_failure_frequency_summary(files)
+                print()
             repeated = _repeated_change_tests(reports)
             if repeated:
                 print(f"Repeated testcase changes on the same location: {len(repeated)}")
@@ -293,6 +336,9 @@ def render_compare_all(
         mode = "report"
         output = io.StringIO()
         with redirect_stdout(output):
+            if files:
+                print_failure_frequency_summary(files)
+                print()
             repeated = _repeated_change_tests(reports)
             if repeated:
                 print(f"Repeated testcase changes on the same location: {len(repeated)}")
@@ -379,7 +425,7 @@ def main() -> int:
                 compare(first, second, args.include_times, args.include_details)
                 for first, second in pairs
             ]
-            if render_compare_all(pairs, reports, args):
+            if render_compare_all(pairs, reports, args, files):
                 return 1
         elif args.first or args.second:
             if not (args.first and args.second):
