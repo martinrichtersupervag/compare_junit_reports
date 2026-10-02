@@ -10,6 +10,7 @@ import json
 import sys
 from pathlib import Path
 
+from .models import RichStatus
 from .report_data import ExplainParallelReport, ParallelGroupReport, CompareReport
 from .analyzer import build_explain_parallel_report, summarize_test_statuses, _repeated_change_tests
 from .file_registry import report_label
@@ -70,6 +71,49 @@ def _kv_grid(pairs: list[tuple[str, str]]) -> str:
     return f'<div class="kv-grid">{items}</div>'
 
 
+
+# ── rich status breakdown ─────────────────────────────────────────────────────
+
+def _render_rich_status_summary(grp: ParallelGroupReport) -> str:
+    """Colour-coded breakdown table of RichStatus counts."""
+    ROWS = [
+        (RichStatus.PASSED,                 "#4ade80", "Passed"),
+        (RichStatus.PASSED_AS_SKIPPED,      "#86efac", "Passed (as skipped)"),
+        (RichStatus.SKIPPED_UNSUPPORTED,    "#94a3b8", "Skipped – vendor unsupported"),
+        (RichStatus.SKIPPED_OTHER,          "#64748b", "Skipped – other"),
+        (RichStatus.FAILURE_QOS_UNEXPECTED, "#f87171", "Failure – unexpected QoS incompatibility"),
+        (RichStatus.FAILURE_FALSE_PASS,     "#fb923c", "Failure – false pass (should have failed)"),
+        (RichStatus.FAILURE_DATA,           "#fbbf24", "Failure – data error"),
+        (RichStatus.FAILURE_ORDERING,       "#a78bfa", "Failure – ordering / timing"),
+        (RichStatus.FAILURE_INFRASTRUCTURE, "#e879f9", "Failure – infrastructure"),
+        (RichStatus.FAILURE_OTHER,          "#94a3b8", "Failure – other"),
+        (RichStatus.ERROR,                  "#dc2626", "Error (framework exception)"),
+    ]
+    total = sum(grp.rich_status_totals.values()) or 1
+    rows_html = ""
+    for rs, color, label in ROWS:
+        raw = grp.rich_status_totals.get(rs, 0)
+        if raw == 0:
+            continue
+        pct = raw / total * 100
+        avg = grp.norm(raw)
+        rows_html += (
+            f'<tr>'
+            f'<td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;'
+            f'background:{color};margin-right:6px"></span>{_esc(label)}</td>'
+            f'<td style="text-align:right">{raw:,}</td>'
+            f'<td style="text-align:right">{avg:.1f}</td>'
+            f'<td>{_bar(pct, 100, color, 12)}</td>'
+            f'</tr>'
+        )
+    return (
+        f'<table class="report-table">'
+        f'<thead><tr><th>Status</th><th style="text-align:right">Raw total</th>'
+        f'<th style="text-align:right">Avg/run</th><th>Share</th></tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
+    )
+
+
 # ── parallel group tab ────────────────────────────────────────────────────────
 
 def _render_group_tab(grp: ParallelGroupReport) -> str:
@@ -83,8 +127,12 @@ def _render_group_tab(grp: ParallelGroupReport) -> str:
         ("Flaky tests", f"<strong class='warn'>{grp.flaky_count:,}</strong> ({grp.flaky_pct:.1f}%)"),
         ("Avg failures / run", f"<strong class='fail'>{grp.norm(grp.total_fail_raw):.1f}</strong>"),
         ("Avg passed / run", f"<strong class='pass'>{grp.norm(grp.total_pass_raw):.1f}</strong>"),
-        ("Avg skipped / run", str(f"{grp.norm(grp.total_skip_raw):.1f}")),
+        ("Avg unsupported-skip / run", str(f"{grp.norm(grp.total_skip_raw):.1f}")),
     ])))
+
+    # Rich status breakdown
+    sections.append(_section("Result Classification (per run, all tests)",
+                             _render_rich_status_summary(grp)))
 
     # Flaky tests table
     if grp.flaky_tests:
@@ -351,7 +399,7 @@ def generate_html_report(
     html = render_html_report(ep, reports=reports, files=files)
 
     dest_dir = output_dir or files[0].parent
-    output_path = dest_dir / "report.html"
+    output_path = dest_dir / "explain_parallel.html"
     try:
         output_path.write_text(html, encoding="utf-8")
         print(f"HTML report written to: {output_path.name}")

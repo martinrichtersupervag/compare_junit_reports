@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .models import TestResult, _test_label, _key_label
+from .models import TestResult, _test_label, _key_label, RichStatus
 from .loader import load_results
 from .report_data import (
     ChangedTest,
@@ -69,7 +69,7 @@ def compare(
 # ── agregace napříč více soubory ──────────────────────────────────────────────
 
 def _aggregate_statuses(files: list[Path]) -> dict[str, StatusSummaryRow]:
-    """Vnitřní agregace – vrátí dict label -> StatusSummaryRow."""
+    """Aggregate RichStatus counts per test label across all files."""
     totals: dict[str, StatusSummaryRow] = {}
     for path in files:
         _, results = load_results(path)
@@ -77,15 +77,7 @@ def _aggregate_statuses(files: list[Path]) -> dict[str, StatusSummaryRow]:
             label = _test_label(result)
             if label not in totals:
                 totals[label] = StatusSummaryRow(label=label)
-            row = totals[label]
-            if result.status == "passed":
-                row.passed += 1
-            elif result.status == "failure":
-                row.failure += 1
-            elif result.status == "error":
-                row.error += 1
-            elif result.status == "skipped":
-                row.skipped += 1
+            totals[label].add(result.rich_status)
     return totals
 
 
@@ -144,21 +136,35 @@ def build_parallel_group_report(
     parallel_count: int,
     group_files: list[Path],
 ) -> ParallelGroupReport:
-    """Postaví ParallelGroupReport pro jednu skupinu souborů se stejným par-count."""
+    """Build ParallelGroupReport for one group of files with the same par-count."""
     run_count = len(group_files)
 
-    status_summary = summarize_test_statuses(group_files)   # jen failing
-    all_summary = summarize_all_statuses(group_files)       # všechny
+    # aggregate all test statuses across the group
+    all_rows = _aggregate_statuses(group_files)
 
-    total_unique = len(all_summary)
+    # rich_status_totals: sum of each RichStatus across all tests and files
+    rich_status_totals: dict[RichStatus, int] = {}
+    for row in all_rows.values():
+        for rs, cnt in row.rich_counts.items():
+            rich_status_totals[rs] = rich_status_totals.get(rs, 0) + cnt
 
-    # flaky
+    total_unique = len(all_rows)
+
+    # status_summary = tests with at least one real failure (for QoS/pub/sub breakdown)
+    status_summary = [
+        (label, row) for label, row in all_rows.items()
+        if row.total_real_fail > 0
+    ]
+
+    # flaky = passed in some runs, genuinely failed in others
     flaky_rows: list[FlakyTestRow] = []
-    for label, counts in all_summary:
-        pass_n = counts.get("passed", 0)
-        fail_n = counts.get("failure", 0) + counts.get("error", 0)
-        if pass_n > 0 and fail_n > 0:
-            flaky_rows.append(FlakyTestRow(label=label, pass_count=pass_n, fail_count=fail_n))
+    for label, row in all_rows.items():
+        if row.is_flaky:
+            flaky_rows.append(FlakyTestRow(
+                label=label,
+                pass_count=row.passed,
+                fail_count=row.total_real_fail,
+            ))
     flaky_rows.sort(key=lambda r: -(r.pass_count + r.fail_count))
 
     flaky_pub: dict[str, int] = {}
@@ -166,28 +172,27 @@ def build_parallel_group_report(
     flaky_pub_tests: dict[str, int] = {}
     flaky_sub_tests: dict[str, int] = {}
     flaky_feat: dict[str, int] = {}
-    for row in flaky_rows:
-        ps = _extract_pub_sub(row.label)
+    for row_f in flaky_rows:
+        ps = _extract_pub_sub(row_f.label)
         if ps:
             pub, sub = ps
-            flaky_pub[pub] = flaky_pub.get(pub, 0) + row.fail_count
-            flaky_sub[sub] = flaky_sub.get(sub, 0) + row.fail_count
+            flaky_pub[pub] = flaky_pub.get(pub, 0) + row_f.fail_count
+            flaky_sub[sub] = flaky_sub.get(sub, 0) + row_f.fail_count
             flaky_pub_tests[pub] = flaky_pub_tests.get(pub, 0) + 1
             flaky_sub_tests[sub] = flaky_sub_tests.get(sub, 0) + 1
-        feat = _extract_feature(row.label)
-        flaky_feat[feat] = flaky_feat.get(feat, 0) + row.fail_count
+        feat = _extract_feature(row_f.label)
+        flaky_feat[feat] = flaky_feat.get(feat, 0) + row_f.fail_count
 
-    # celkové fail / pass / skip
-    total_fail_raw = sum(c.get("failure", 0) + c.get("error", 0) for _, c in status_summary)
-    total_pass_raw = sum(c.get("passed", 0) for _, c in all_summary)
-    total_skip_raw = sum(c.get("skipped", 0) for _, c in all_summary)
+    # overall totals using semantic properties
+    total_fail_raw = sum(row.total_real_fail for row in all_rows.values())
+    total_pass_raw = sum(row.passed for row in all_rows.values())
+    total_skip_raw = sum(row.skipped_unsupported for row in all_rows.values())
 
-    # QoS + pub/sub celkové
     feature_fails: dict[str, int] = {}
     pub_fails: dict[str, int] = {}
     sub_fails: dict[str, int] = {}
-    for label, counts in status_summary:
-        total_fail = counts.get("failure", 0) + counts.get("error", 0)
+    for label, row in status_summary:
+        total_fail = row.total_real_fail
         feature_fails[_extract_feature(label)] = feature_fails.get(_extract_feature(label), 0) + total_fail
         ps = _extract_pub_sub(label)
         if ps:
@@ -203,6 +208,7 @@ def build_parallel_group_report(
         total_pass_raw=total_pass_raw,
         total_skip_raw=total_skip_raw,
         total_unique_tests=total_unique,
+        rich_status_totals=rich_status_totals,
         flaky_tests=flaky_rows,
         flaky_pub=flaky_pub,
         flaky_sub=flaky_sub,
