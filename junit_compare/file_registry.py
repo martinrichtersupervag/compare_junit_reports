@@ -6,9 +6,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-# Nový formát: junit_interoperability_report-DDMMYYYY-HHmm-parNN-XXXXsec.xml
+# Nový formát: junit_interoperability_report[-_]DDMMYYYY-HHmm-parNN[-XXXXsec].xml
 _NEW_FNAME_RE = re.compile(
-    r"-(\d{2})(\d{2})(\d{4})-(\d{4})-par(\d+)-(\d+)sec"
+    r"[-_](\d{2})(\d{2})(\d{4})-(\d{4})-par(\d+)(?:-(\d+)sec)?"
 )
 
 
@@ -30,7 +30,7 @@ def parse_filename_meta(path: Path) -> dict[str, Any] | None:
         "date": f"{day}{month}{year}",
         "time": hhmm,
         "parallel": int(parallel),
-        "duration_sec": int(duration),
+        "duration_sec": int(duration) if duration else 0,
         "sort_key": f"{year}{month}{day}-{hhmm}",
     }
 
