@@ -171,7 +171,7 @@ def main() -> int:
         "--html",
         action="store_true",
         dest="html",
-        help="Generate a self-contained HTML report (report.html) in addition to text output",
+        help="Generate a self-contained HTML report (explain_parallel.html) in addition to text output",
     )
     args = parser.parse_args()
 

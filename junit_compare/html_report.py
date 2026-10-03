@@ -39,7 +39,7 @@ def _bar(value: float, max_value: float, color: str = "#4f8ef7", height: int = 1
 
 def _tab_btn(tab_id: str, label: str, active: bool = False) -> str:
     cls = "tab-btn active" if active else "tab-btn"
-    return f'<button class="{cls}" onclick="showTab(\'{tab_id}\')">{_esc(label)}</button>'
+    return f'<button class="{cls}" data-tab="{tab_id}" onclick="showTab(\'{tab_id}\')">{_esc(label)}</button>'
 
 
 def _tab_panel(tab_id: str, content: str, active: bool = False) -> str:
@@ -49,8 +49,23 @@ def _tab_panel(tab_id: str, content: str, active: bool = False) -> str:
 
 # ── section builders ──────────────────────────────────────────────────────────
 
-def _section(title: str, content: str) -> str:
-    return f'<section class="card"><h2>{_esc(title)}</h2>{content}</section>'
+def _section(title: str, content: str, is_open: bool = True) -> str:
+    open_attr = " open" if is_open else ""
+    return (
+        f'<details class="card section-card"{open_attr}>\n'
+        f'  <summary class="section-header">\n'
+        f'    <span class="collapse-arrow" aria-hidden="true">\n'
+        f'      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">\n'
+        f'        <polyline points="6 9 12 15 18 9"></polyline>\n'
+        f'      </svg>\n'
+        f'    </span>\n'
+        f'    <h2 class="section-title">{_esc(title)}</h2>\n'
+        f'  </summary>\n'
+        f'  <div class="section-body">\n'
+        f'    {content}\n'
+        f'  </div>\n'
+        f'</details>'
+    )
 
 
 def _table(headers: list[str], rows: list[list[str]], cls: str = "") -> str:
@@ -278,7 +293,7 @@ _CSS = """
   --pass: #4ade80; --fail: #f87171; --warn: #fbbf24;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif;
+body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
        font-size: 14px; line-height: 1.6; }
 a { color: var(--accent); }
 h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: .25rem; }
@@ -287,18 +302,84 @@ h3 { font-size: .95rem; font-weight: 600; margin: 1rem 0 .5rem; color: var(--mut
 .header { background: var(--card); border-bottom: 1px solid var(--border);
           padding: 1.25rem 2rem; }
 .subtitle { color: var(--muted); font-size: .85rem; }
-.tabs { display: flex; gap: .5rem; padding: 1rem 2rem .25rem;
-        background: var(--card); border-bottom: 1px solid var(--border);
-        flex-wrap: wrap; }
+
+/* Tabs & Toolbar Header */
+.tabs-header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: .75rem 2rem; flex-wrap: wrap; gap: .75rem;
+}
+.tabs { display: flex; gap: .5rem; flex-wrap: wrap; }
 .tab-btn { background: transparent; border: 1px solid var(--border);
            color: var(--muted); padding: .4rem 1rem; border-radius: 6px;
            cursor: pointer; font-size: .85rem; transition: all .15s; }
 .tab-btn:hover { border-color: var(--accent); color: var(--accent); }
 .tab-btn.active { background: var(--accent); border-color: var(--accent);
                   color: #fff; font-weight: 600; }
+
+.tab-actions { display: flex; gap: .5rem; align-items: center; }
+.action-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: .35rem .75rem; border-radius: 6px;
+  font-size: .8rem; font-weight: 500; cursor: pointer;
+  transition: all .15s ease;
+}
+.action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.print-btn { border-color: rgba(79, 142, 247, 0.4); color: var(--accent); }
+.print-btn:hover { background: var(--accent); color: #fff; }
+
 .tab-panel { padding: 1.5rem 2rem; }
-.card { background: var(--card); border: 1px solid var(--border);
-        border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+
+/* Collapsible Section Cards */
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;
+  transition: border-color .15s ease, padding .2s ease, background .15s ease;
+}
+details:not([open]).section-card {
+  padding: .75rem 1.25rem;
+  margin-bottom: .75rem;
+}
+details:not([open]).section-card:hover {
+  border-color: var(--accent);
+}
+.section-header {
+  display: flex; align-items: center; gap: .65rem;
+  cursor: pointer; user-select: none; list-style: none;
+  padding: .15rem 0; outline: none;
+}
+.section-header::-webkit-details-marker,
+.section-header::marker {
+  display: none;
+}
+.section-title {
+  font-size: 1.1rem; font-weight: 600; color: var(--accent);
+  margin: 0; transition: color .15s ease;
+}
+.section-header:hover .section-title {
+  color: #79aeff;
+}
+.collapse-arrow {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 4px; color: var(--accent);
+  transition: transform .2s cubic-bezier(0.4, 0, 0.2, 1), background .15s ease;
+  flex-shrink: 0;
+}
+.section-header:hover .collapse-arrow {
+  background: rgba(79, 142, 247, 0.15);
+}
+details:not([open]) .collapse-arrow {
+  transform: rotate(-90deg);
+}
+details[open] .collapse-arrow {
+  transform: rotate(0deg);
+}
+.section-body {
+  margin-top: 1rem;
+}
+
+/* Grids & Tables */
 .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .5rem; }
 .kv-item { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
            padding: .5rem .75rem; display: flex; flex-direction: column; }
@@ -316,15 +397,225 @@ h3 { font-size: .95rem; font-weight: 600; margin: 1rem 0 .5rem; color: var(--mut
 .pass { color: var(--pass); }
 .fail { color: var(--fail); }
 .warn { color: var(--warn); }
+.print-only { display: none; }
+
+/* ── Print Media Styles (Edge & Chrome) ─────────────────────────────────── */
+@media print {
+  @page {
+    margin: 1.2cm 1cm;
+    size: auto;
+  }
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 10pt !important;
+    line-height: 1.4 !important;
+  }
+  .no-print, .tabs-header, .tabs, .tab-actions {
+    display: none !important;
+  }
+  .header {
+    background: transparent !important;
+    border-bottom: 2px solid #cbd5e1 !important;
+    padding: 0 0 .75rem 0 !important;
+    margin-bottom: 1rem !important;
+  }
+  .header h1 {
+    font-size: 1.4rem !important;
+    color: #0f172a !important;
+    margin-bottom: .2rem !important;
+  }
+  .subtitle {
+    color: #475569 !important;
+    font-size: .8rem !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-tab-header {
+    margin: 0 0 1rem 0 !important;
+    padding: .4rem .75rem !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    font-size: .9rem !important;
+    color: #1e293b !important;
+    display: flex !important;
+    gap: .5rem !important;
+    align-items: center !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .print-label {
+    color: #64748b !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    font-size: .75rem !important;
+    letter-spacing: .04em !important;
+  }
+  .tab-panel {
+    padding: 0 !important;
+  }
+  .tab-panel[style*="display: none"],
+  .tab-panel[style*="display:none"] {
+    display: none !important;
+  }
+  .tab-panel[style*="display: block"],
+  .tab-panel[style*="display:block"] {
+    display: block !important;
+  }
+
+  /* CRITICAL: Keep collapsed vs expanded state exactly as displayed on screen */
+  details:not([open]) .section-body {
+    display: none !important;
+  }
+  details[open] .section-body {
+    display: block !important;
+  }
+
+  /* Section cards in print */
+  .card, .section-card {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  details[open].section-card {
+    padding: .85rem 1rem !important;
+    margin-bottom: 1rem !important;
+  }
+  details:not([open]).section-card {
+    padding: .5rem .85rem !important;
+    margin-bottom: .5rem !important;
+    background: #f8fafc !important;
+  }
+  .section-title {
+    color: #1e3a8a !important;
+    font-size: 1rem !important;
+  }
+  .collapse-arrow {
+    color: #475569 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  details:not([open]) .collapse-arrow {
+    transform: rotate(-90deg) !important;
+  }
+  details[open] .collapse-arrow {
+    transform: rotate(0deg) !important;
+  }
+
+  /* Subheadings */
+  h3 {
+    color: #334155 !important;
+    margin: .75rem 0 .4rem !important;
+    font-size: .85rem !important;
+  }
+
+  /* KV grid */
+  .kv-grid {
+    gap: .4rem !important;
+  }
+  .kv-item {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: .35rem .5rem !important;
+  }
+  .kv-key {
+    color: #64748b !important;
+    font-size: .68rem !important;
+  }
+  .kv-val {
+    color: #0f172a !important;
+    font-size: .95rem !important;
+  }
+
+  /* Tables in print */
+  .report-table {
+    font-size: .75rem !important;
+  }
+  .report-table th {
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+    border-bottom: 1.5px solid #94a3b8 !important;
+    padding: .35rem .5rem !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .report-table td {
+    color: #0f172a !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: .3rem .5rem !important;
+  }
+  .report-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .report-table thead {
+    display: table-header-group !important;
+  }
+
+  /* Ensure colors and bars are rendered accurately */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .bar {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .bar-label {
+    color: #475569 !important;
+  }
+  .pass { color: #16a34a !important; }
+  .fail { color: #dc2626 !important; }
+  .warn { color: #d97706 !important; }
+}
 """
 
 _JS = """
 function showTab(id) {
   document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById(id).style.display = 'block';
-  document.querySelector('[onclick="showTab(\\''+id+'\\')"]').classList.add('active');
+  const panel = document.getElementById(id);
+  if (panel) panel.style.display = 'block';
+  const btn = document.querySelector('[data-tab="'+id+'"]');
+  if (btn) btn.classList.add('active');
+  updatePrintTabHeader();
 }
+
+function getActiveTabPanel() {
+  const panels = Array.from(document.querySelectorAll('.tab-panel'));
+  return panels.find(p => p.style.display !== 'none') || panels[0];
+}
+
+function expandAllSections() {
+  const activePanel = getActiveTabPanel();
+  if (activePanel) {
+    activePanel.querySelectorAll('details.section-card').forEach(d => d.open = true);
+  }
+}
+
+function collapseAllSections() {
+  const activePanel = getActiveTabPanel();
+  if (activePanel) {
+    activePanel.querySelectorAll('details.section-card').forEach(d => d.open = false);
+  }
+}
+
+function updatePrintTabHeader() {
+  const activeBtn = document.querySelector('.tab-btn.active');
+  const printTitle = document.getElementById('print-tab-title');
+  if (activeBtn && printTitle) {
+    printTitle.textContent = activeBtn.textContent.trim();
+  }
+}
+
+window.addEventListener('beforeprint', updatePrintTabHeader);
+window.addEventListener('DOMContentLoaded', updatePrintTabHeader);
 """
 
 
@@ -353,12 +644,15 @@ def render_html_report(
 
     # Ungrouped files note
     if ep.ungrouped_files:
-        note = (
-            f'<div class="card"><p style="color:var(--warn)">'
-            f'{len(ep.ungrouped_files)} file(s) without parallel-count metadata excluded.</p></div>'
+        note = _section(
+            "Excluded Files",
+            f'<p style="color:var(--warn)">'
+            f'{len(ep.ungrouped_files)} file(s) without parallel-count metadata excluded.</p>'
         )
         tabs_btns.append(_tab_btn("tab_ungrouped", "Excluded files"))
         tabs_panels.append(_tab_panel("tab_ungrouped", note))
+
+    initial_tab_label = f"par{ep.groups[0].parallel_count} ({ep.groups[0].run_count} runs)" if ep.groups else ""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -375,7 +669,27 @@ def render_html_report(
   <h1>{_esc(title)}</h1>
   <p class="subtitle">9×9 publish/subscribe interoperability test suite — grouped by parallel-run count, normalised per run</p>
 </div>
-<div class="tabs">{''.join(tabs_btns)}</div>
+<div class="tabs-header no-print">
+  <div class="tabs">{''.join(tabs_btns)}</div>
+  <div class="tab-actions">
+    <button class="action-btn" onclick="expandAllSections()" title="Expand all sections in current tab">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline><polyline points="6 15 12 21 18 15"></polyline></svg>
+      Expand all
+    </button>
+    <button class="action-btn" onclick="collapseAllSections()" title="Collapse all sections in current tab">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline><polyline points="18 9 12 3 6 9"></polyline></svg>
+      Collapse all
+    </button>
+    <button class="action-btn print-btn" onclick="window.print()" title="Print report (Ctrl+P)">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"></path></svg>
+      Print
+    </button>
+  </div>
+</div>
+<div class="print-only print-tab-header">
+  <span class="print-label">Report View:</span>
+  <strong id="print-tab-title">{_esc(initial_tab_label)}</strong>
+</div>
 {''.join(tabs_panels)}
 <script>{_JS}</script>
 </body>
